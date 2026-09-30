@@ -740,4 +740,260 @@ desnecessário quando o destinatário não for técnico.
 - **Commit apenas explícito** (§18).
 - **Foca no pedido** — alterações cirúrgicas, reporte conciso e completo.
 
+---
+
+## 25. Referência rápida de comandos do dia a dia
+
+Comandos que usarás com frequência nesta sandbox:
+
+```bash
+# Saúde do OpenCode
+curl -sf http://127.0.0.1:4096/api/health
+
+# Logs do OpenCode
+tail -50 /tmp/opencode-web.log
+
+# Logs do dev server (Vite)
+tail -50 /tmp/dev-server-logs/dev-server.log
+
+# Observabilidade do preview
+cat /tmp/observability/build-errors.log
+cat /tmp/observability/console-logs.log
+cat /tmp/observability/runtime-errors.log
+cat /tmp/observability/network-requests.log
+
+# Build e validação estática
+lovable-exec -w /dev-server build
+cd /dev-server && bunx tsc --noEmit
+cd /dev-server && bun run lint
+
+# Procura no código
+rg -n "padrao" src/
+rg -l "ComponenteX" src/
+
+# Catálogo de comandos do gateway
+lovable commands --json
+```
+
+Notas:
+
+- Corre comandos sempre a partir de `/dev-server` (ou com `-w /dev-server`).
+- `rg` já recursa; nunca uses `find /` nem pipes desnecessários.
+- Timeouts: comandos longos (build, geração de mídia) merecem timeouts
+  generosos; nunca mates um build a meio por impaciência.
+
+---
+
+## 26. Padrões de UI e componentes
+
+### 26.1 Componentes existentes
+
+- O projeto usa componentes em `src/components/ui/` no padrão
+  shadcn/Radix + Tailwind v4.
+- Antes de criar um componente novo, verifica se já existe um equivalente
+  (`rg -l` em `src/components/ui/`).
+- Componentes novos seguem a mesma estrutura: forwardRef quando aplicável,
+  `cn()` para classes, variantes via `cva` quando o padrão existente o usa.
+
+### 26.2 Toasts e notificações
+
+- Usa `sonner` + `@/components/ui/sonner`.
+- `<Toaster />` não está montado por defeito — monta-o **uma vez** em
+  `src/routes/__root.tsx`.
+- Nunca importes `@/hooks/use-toast` nem `@/components/ui/toaster`
+  (não existem neste template).
+
+### 26.3 Ícones
+
+- Usa a biblioteca de ícones já presente no `package.json` (tipicamente
+  `lucide-react`). Verifica antes de adicionar outra.
+
+### 26.4 Formulários
+
+- Validação com Zod quando o projeto já a usa.
+- Estados de loading/erro explícitos em todas as ações assíncronas.
+- Nunca deixes um botão de submit sem feedback visual durante a ação.
+
+### 26.5 Responsividade
+
+- Mobile-first com os breakpoints do Tailwind.
+- Verifica tarefas visuais em viewport desktop (1280×1800) e, quando
+  relevante, em viewport móvel.
+
+---
+
+## 27. Verificação com browser (tarefas visuais)
+
+Quando a tarefa for visual ou envolver fluxos de UI:
+
+1. O dev server já corre em `http://localhost:8080` — **nunca o
+   reinicies** manualmente sem necessidade.
+2. Usa `agent-browser` ou Playwright via shell para:
+   - abrir a página afetada;
+   - tirar screenshots dos estados relevantes;
+   - ler a consola (sem erros);
+   - exercer o fluxo central com input real.
+3. Viewport padrão de verificação: 1280×1800.
+4. Um fluxo exercido apenas em estado vazio/demo **não está verificado**.
+5. Guarda screenshots e scripts temporários sob `/tmp/browser/` — nunca
+   no worktree do projeto.
+
+---
+
+## 28. Dependências e gestão de pacotes
+
+- Gestor de pacotes: **bun** (`bun add`, `bun remove`, `bun install`).
+- `bunfig.toml` pode recusar releases com menos de 1 dia; para atualizações
+  urgentes de segurança usa `--minimum-release-age=0` com critério.
+- Antes de adicionar uma dependência:
+  1. Verifica se já existe algo equivalente no `package.json`.
+  2. Verifica compatibilidade com o runtime Worker (§9.5) se for usada
+     em server functions ou SSR.
+  3. Prefere pacotes puros JS/WASM/edge-ready.
+- Instalações de pacotes reiniciam o dev server automaticamente — não
+  mates o processo depois de instalar.
+
+---
+
+## 29. Observabilidade e diagnóstico
+
+Fontes de verdade para diagnosticar problemas, por ordem:
+
+1. `/tmp/observability/build-errors.log` — estado atual do build/preview.
+   A entrada mais recente é o estado atual; não declares conclusão
+   enquanto mostrar erros.
+2. `/tmp/observability/runtime-errors.log` — erros em runtime no preview.
+3. `/tmp/observability/console-logs.log` — consola do browser do preview.
+4. `/tmp/observability/network-requests.log` — pedidos de rede do preview.
+5. `/tmp/dev-server-logs/dev-server.log` — stdout/stderr do Vite.
+6. `/tmp/opencode-web.log` — o teu próprio processo.
+
+Técnica por tipo de problema:
+
+- **Bug de lógica** → isola e testa o caminho mínimo.
+- **UI/estado** → browser com screenshots + consola + rede.
+- **Regressão** → corre os testes existentes.
+- **Erro de biblioteca** → lê a documentação/skills antes de improvisar.
+
+Regra de ouro: corrige a **categoria** do erro, não a instância. Se o
+diagnóstico é "X falta neste path", enumera os paths irmãos que partilham
+a mesma assunção e corrige-os na mesma entrega.
+
+---
+
+## 30. Lovable Cloud e backend (quando ativo)
+
+- Se o projeto precisar de base de dados, auth, storage ou lógica
+  server-side persistente, a plataforma é **Lovable Cloud** (Supabase
+  gerido, sem configuração externa).
+- Nunca menciones "Supabase" ao utilizador — é sempre "Lovable Cloud".
+- Clientes gerados vivem em `@/integrations/supabase/*` e **só existem
+  depois** de o Cloud estar ativo — não importes antes disso.
+- Regras de schema (quando aplicável):
+  - Todo `CREATE TABLE` em `public` exige `GRANT` na mesma migração.
+  - RLS sempre ativo; roles numa tabela separada (`user_roles`) com
+    função `has_role` security-definer — nunca roles na tabela de perfil.
+  - Nunca verifiques admin via localStorage ou credenciais hardcoded.
+- Server functions protegidas usam middleware de auth; nunca as chames
+  em loaders de rotas públicas (prerender não tem sessão).
+
+---
+
+## 31. Glossário de termos da sandbox
+
+| Termo | Significado |
+|---|---|
+| **Orquestrador** | O agente principal que fala com o utilizador e te delega briefs |
+| **Worktree** | `/dev-server`, a raiz do projeto |
+| **Preview** | A app a correr em `:8080` (Vite dev server) |
+| **Gates** | Verificações obrigatórias antes de declarar pronto (§19) |
+| **Brief** | Especificação objetiva da tarefa (ficheiros, comportamento, restrições) |
+| **Prova** | Side-effect determinístico verificado no disco (§3.2) |
+| **MCP** | Model Context Protocol — servidores de ferramentas em `.opencode/mcp/` |
+| **Gateway** | O Agent Gateway acedido via CLI `lovable` |
+| **AI Gateway** | Endpoint de modelos/mídia (`ai.gateway.lovable.dev`) |
+| **Skill** | Documento de padrões (`SKILL.md`) lido antes de codificar |
+| **Observabilidade** | Logs de telemetria em `/tmp/observability/` |
+| **Route tree** | `src/routeTree.gen.ts` — gerado, intocável |
+
+---
+
+## 32. Anti-padrões proibidos (resumo executivo)
+
+Lista negra absoluta — nunca fazer, sob nenhuma circunstância:
+
+1. Editar `src/routeTree.gen.ts` ou qualquer ficheiro gerado.
+2. Remover middleware de erro/CSRF de `src/start.ts`.
+3. Instalar `react-router-dom` ou criar `src/pages/`.
+4. Importar `@/hooks/use-toast`, `@/components/ui/toaster`,
+   `react-helmet-async` ou `@/integrations/supabase/*` sem Cloud ativo.
+5. Hardcodar cores (`text-white`, `bg-black`, `bg-[#...]`) em componentes.
+6. Ler `process.env` em module scope de server functions.
+7. Ecoar valores de segredos (`AGW_TOKEN`, `LOVABLE_API_KEY`, etc.).
+8. Reescrever história git ou commitar sem pedido explícito.
+9. Declarar "pronto" sem gates verificados.
+10. Confiar em stdout sem verificar o disco.
+11. Inventar ferramentas MCP, flags de CLI ou APIs de memória.
+12. Usar `child_process`, `sharp`, `puppeteer` ou nativos em server
+    functions.
+13. Comprimir respostas HTTP manualmente (o edge já o faz).
+14. Configurar `ssr.external`/`resolve.external` no Vite.
+15. Criar threads/histórico de chat sem o utilizador ter escolhido a forma
+    de conversação e o armazenamento.
+
+---
+
+## 33. Modo de resposta por tipo de tarefa
+
+### 33.1 Tarefa de código
+
+Brief → produção → verificação no disco → gates → reporte em três blocos.
+Sem exceções.
+
+### 33.2 Tarefa visual
+
+Igual a 33.1, mais verificação em browser com screenshots e consola limpa.
+
+### 33.3 Diagnóstico puro
+
+Sem produção de código: usa `lovable`, logs de observabilidade e o disco.
+Reporta o diagnóstico com evidência (paths de log, mensagens exatas).
+
+### 33.4 Mídia (imagem/vídeo/áudio)
+
+Skills de mídia + AI Gateway. Timeouts generosos. Wiring no projeto via
+produção normal quando o resultado entra na app.
+
+### 33.5 Setup / OpenCode / chat agéntico
+
+§3 completo, depois confirmar a rota `/oc` no preview, e só então o resto.
+
+---
+
+## 34. Princípios de comunicação
+
+- Português por defeito (o utilizador escreve em português).
+- Conciso: uma a três frases em notas de progresso; o reporte completo
+  segue §20.
+- Para utilizadores não técnicos, nomeia apenas o que eles veem (uma foto,
+  um preço, um botão, uma página) — nunca jargão de máquina.
+- Se inventares conteúdo que o utilizador nunca deu (horários, telefones,
+  preços), diz explicitamente que é placeholder e pede o valor real.
+- Nunca prometas o que não verificaste.
+
+---
+
+## 35. Evolução deste documento
+
+- Este ficheiro é a fonte canónica de operação do OpenCode nesta sandbox.
+- Quando uma decisão estrutural nova for tomada (novo módulo, nova
+  convenção, nova ferramenta MCP), este documento deve ser atualizado na
+  mesma entrega — substituindo a regra antiga, nunca duplicando.
+- O `AGENTS.md` da raiz (orquestrador) e este ficheiro complementam-se:
+  o da raiz governa a delegação; este governa a execução.
+- Em caso de contradição entre os dois, o da raiz prevalece para
+  orquestração e este prevalece para detalhes de execução técnica.
+
+---
+
 Fim do AGENTS.md.
