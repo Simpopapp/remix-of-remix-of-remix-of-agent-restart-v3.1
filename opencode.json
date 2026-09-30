@@ -1,0 +1,14 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "lovable-tools": {
+      "type": "local",
+      "command": [
+        "bun",
+        ".opencode/mcp/imagegen-server.ts"
+      ],
+      "enabled": true
+    }
+  },
+  "model": "opencode/big-pickle"
+}
